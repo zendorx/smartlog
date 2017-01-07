@@ -163,11 +163,44 @@ indent = 0  # from bot
 user_filter = ""
 show_info = True
 view_line = None
+last_saved_fname = ""
+
+def open_last_log_dir():
+    os.system("start .")
+
+def is_ignored(l):
+    for ig in ignore:
+        if ig in l.lower():
+            return True
+    return False
 
 
-def toggle_info_command():
-    global show_info
-    show_info = not show_info
+def try_add_to_buffer(l):
+    global buffer
+    if not is_ignored(l):
+        buffer.append(l)
+
+
+def update_buffer():
+    global buffer
+    buffer = [l for l in buffer if not is_ignored(l)]
+
+
+def add_ignore_command(value):
+    ignore.append(value.lower().strip())
+    update_buffer()
+
+
+def save_command(fname, bf):
+    global last_saved_fname
+    dt = "1.1.2017"
+    if fname == "" or fname is None:
+        fname = "%s.log" % dt
+
+    last_saved_fname = fname
+    with open(fname, 'w') as f:
+        for line in bf:
+            f.write("%s\n" % line)
 
 
 def adb_clean_command():
@@ -175,31 +208,37 @@ def adb_clean_command():
     buffer[:] = []
 
 
-def filterBuffer():
+def filter_buffer():
     global buffer_filtered
     buffer_filtered[:] = []
     for line in buffer:
         # first check
 
         if len(user_filter):
-            if user_filter.lower() in line.lower():
+            flist = user_filter.split(" ")
+            con_all = True
+            for fpart in flist:
+                if not fpart.lower() in line.lower():
+                    con_all = False
+                    break
+            if con_all:
                 buffer_filtered.append(line)
         else:
             buffer_filtered.append(line)
 
 
-def printBuffer(screen):
-    #TODO: optimize output
+def print_buffer(screen):
+    # TODO: optimize output
     global user_command
     wh, ww = screen.dimensions
-    filterBuffer()
+    filter_buffer()
 
     max_count = wh - 2
     start_from = view_line if view_line else len(buffer_filtered)
     start = max(start_from - indent - max_count, 0)
     printy = 1
     for line in buffer_filtered[start: start + max_count]:
-        value = ("{0:%d}" % (ww-1)).format(line)
+        value = ("{0:%d}" % (ww)).format(line)
         screen.paint(value, 0, printy)
         printy += 1
 
@@ -207,15 +246,32 @@ def printBuffer(screen):
         screen.print_at(("{0:%d}" % (ww)).format(" "), 0, j)
 
 
-def handleCommand(command):
+def handle_command(command):
     global user_filter
+    if not command.startswith(":"):
+        return last_user_command
+
     if command == ":q":
         raise KeyboardInterrupt()
+    elif command == ":o":
+        open_last_log_dir()
+    elif command.startswith(":wq"):
+        command = command[:2] + command[3:]
+        handle_command(command)
+        raise KeyboardInterrupt()
+    elif command.startswith(":i"):
+        value = command[2:].strip()
+        add_ignore_command(value)
+        return "Ignored: '%s'" % value
+    elif command.startswith(":wl"):
+        save_command(last_saved_fname, buffer)  # todo: fix copypaste
+        return "Saved: " + last_saved_fname
+    elif command.startswith(":w"):
+        fname = command[2:].strip()
+        save_command(fname, buffer)
+        return "Saved: " + last_saved_fname
     elif command == ":clean" or command == ":c":
         adb_clean_command()
-
-    elif command == ":info" or command == ":i":
-        toggle_info_command()
     else:
         return "Unknown command: %s" % command
 
@@ -225,20 +281,21 @@ def handleCommand(command):
 def move(steps):
     global indent
     global view_line
+
     lb = len(buffer_filtered)
 
     if not indent and steps:
         view_line = lb
 
     indent += steps
-    indent = max(lb, indent)
+    indent = max(0, indent)
     indent = min(indent, lb - 1)
 
     if not indent:
         view_line = None
 
 
-def handleUserInput(c):
+def handle_user_input(c):
     global user_command
     global last_user_command
     global user_filter
@@ -246,27 +303,32 @@ def handleUserInput(c):
     global indent
     if c:
         if c == Screen.KEY_ESCAPE:
-            if view_line:
+            if view_line is None and user_filter == "" and user_command == "":
+                ask = "Press ESC again to exit"
+                if ask == last_user_command:
+                    raise KeyboardInterrupt()
+                last_user_command = ask
+            elif view_line:
                 view_line = None
                 indent = 0
             else:
                 user_command = ""
                 user_filter = ""
+
         elif c == Screen.KEY_BACK:
             user_command = user_command[0:len(user_command) - 1]
             if len(user_command) == 0 and len(user_filter) != 0:
                 user_filter = ""
         elif c == Screen.KEY_UP:
-            move(1)
+            move(3)
         elif c == Screen.KEY_DOWN:
-            move(-1)
+            move(-3)
         elif c == Screen.KEY_PAGE_UP:
-            move(25)
+            move(35)
         elif c == Screen.KEY_PAGE_DOWN:
-            move(-25)
-
+            move(-35)
         elif c == 13:
-            last_user_command = handleCommand(user_command)
+            last_user_command = handle_command(user_command)
             user_command = ""
         elif c in xrange(32, 126):
             user_command += str(chr(c))
@@ -275,7 +337,7 @@ def handleUserInput(c):
         user_filter = user_command[1:]
 
 
-def printInfo(screen):
+def print_info(screen):
     if show_info:
         wh, ww = screen.dimensions
         value = "[%d:%d]     " % (len(buffer_filtered), len(buffer))
@@ -283,20 +345,20 @@ def printInfo(screen):
             value += "indent: %d     " % indent
         if len(user_filter):
             value += "filter: %s   " % user_filter
-        value = ("{0:%d}" % (ww, )).format(value)
-        screen.paint(value, 0, 0)
+        value = ("{0:%d}" % (ww,)).format(value)
+        screen.paint(value, 0, 0, colour=Screen.COLOUR_YELLOW)
 
 
-def printUserCommand(screen):
+def print_user_command(screen):
     wh, ww = screen.dimensions
     mwc = ww - ww / 3
     value = ("{0:%d}" % (mwc,)).format(user_command)
     value2 = ("{:>%d}" % (ww - mwc,)).format(last_user_command)
-    screen.print_at(value, 0, wh - 1)
-    screen.print_at(value2, mwc, wh - 1)
+    screen.print_at(value, 0, wh - 1, colour=Screen.COLOUR_CYAN)
+    screen.print_at(value2, mwc, wh - 1, colour=Screen.COLOUR_YELLOW)
 
 
-def readOutput(q):
+def read_output(q):
     try:
         while 1:
             p = subprocess.Popen(cmd, stdout=subprocess.PIPE)
@@ -307,7 +369,7 @@ def readOutput(q):
 
 
 queue = Queue()
-readThread = Thread(target=readOutput, args=(queue,))
+readThread = Thread(target=read_output, args=(queue,))
 readThread.daemon = True
 readThread.start()
 
@@ -321,22 +383,21 @@ def update(screen):
         #                 randint(0, screen.width), randint(0, screen.height),
         #                 colour=randint(0, screen.colours - 1),
         #                 bg=randint(0, screen.colours - 1))
-        line = ""
         try:
             while 1:
                 line = queue.get_nowait()  # or q.get(timeout=.1)
-                buffer.append(line)
+                try_add_to_buffer(line)
 
         except Empty:
             pass
 
-        printInfo(screen)
+        print_info(screen)
 
-        handleUserInput(screen.get_key())
+        handle_user_input(screen.get_key())
 
-        printBuffer(screen)
+        print_buffer(screen)
 
-        printUserCommand(screen)
+        print_user_command(screen)
 
         screen.refresh()
 
@@ -352,11 +413,5 @@ while True:
     except KeyboardInterrupt:
         break
         pass
-
-dt = "1.1.2017"
-
-with open('%s.txt' % dt, 'w') as f:
-    for line in buffer:
-        f.write("%s\n" % line)
 
 print "Done!"
