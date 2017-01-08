@@ -74,7 +74,7 @@ _args = parser.parse_args()
 
 exit_commands = _args.ec
 conf_file = _args.cf
-exec_cmd = _args.execute_cmd
+exec_cmd = _args.execute
 clean_cmd = _args.clean
 set_current_dir(_args.cd)
 
@@ -509,7 +509,7 @@ if _args.init:
     init_command()
     exit()
 
-if _args.c:
+if _args.cs:
     clean_command()
 
 while True:
