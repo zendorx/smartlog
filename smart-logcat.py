@@ -1,5 +1,6 @@
 # coding=utf-8
 
+import argparse
 import os
 import subprocess
 from Queue import Queue, Empty
@@ -10,56 +11,100 @@ from asciimatics.screen import Screen
 
 os.system("@echo off | chcp 1250 | @echo on")  # Turn on console colors on Windows
 
-cmd = "adb logcat"
 # cmd = "netstat -a"
 const_wait = "- waiting for device -"
 const_ignore = "ignore:"
-
+version = "0.3"
+app_name = "Smart Logcat"
 buffer = []
 buffer_filtered = []
 words = []
 ignore = []
+exit_commands = ""
+conf_file = "default.cfg"
+current_dir = ""
+source_info = "https://github.com/zendorx/smart-logcat"
+contacts_info = "zendorx@gmail.com"
+
+line = ""
+user_command = ""
+last_user_command = ""
+indent = 0  # from bot
+user_filter = ""
+show_info = True
+view_line = None
+last_saved_fname = ""
+show_help = False
+adb_path = "adb.exe"
+interupt_command = "__interupt_command__"
 
 
-class bcolors:
-    HEADER = '\033[95m'
-    OKBLUE = '\033[94m'
-    OKGREEN = '\033[92m'
-    WARNING = '\033[93m'
-    FAIL = '\033[91m'
-    ENDC = '\033[0m'
-    BOLD = '\033[1m'
-    SYSTEM = '\033[46m'
-    UNDERLINE = '\033[4m'
+def set_current_dir(value):
+    global current_dir
+    current_dir = value
+    if current_dir == ".":
+        current_dir = ""
+    if current_dir != "" and not (current_dir.endswith("\\") or current_dir.endswith("/")):
+        current_dir += "/"
+    return current_dir
 
 
-def getSystemColor():
-    return bcolors.SYSTEM
+## Args
+
+parser = argparse.ArgumentParser(prog=app_name,
+                                 usage="\n  1)Install android SDK\n  2)Add '{$SDK}\platform-tools\\adb.exe' to PATH or setup -adb <path>\n  3)Run programm\n  4)Type :h for more help",
+                                 description="Program prints adb logcat ouput and provides bunch of useful features. Type :h in program for more help.")
+parser.add_argument("-ec", default=exit_commands,
+                    help="Commands that will executed on exit splited by ';' e.g:  'w;q' will write file and open explorer. To see more commands type :h")
+parser.add_argument("-cf", default=conf_file, help="Specifies config file name. By default is '%s'" % (conf_file,))
+parser.add_argument("-cd", default=current_dir, help="Specifies directory where log files will be saved")
+parser.add_argument("-c", default=False, action='store_const', const=True, help="Cleans adb console on startup")
+parser.add_argument("--init", default=False, action='store_const', const=True,
+                    help="Creates default config file in app folder")
+parser.add_argument('--version', "-v", action='version', version="%s %s" % (app_name, version))
+parser.add_argument('-adb', default=adb_path, help="Specifies adb.exe full path")
+_args = parser.parse_args()
+
+exit_commands = _args.ec
+conf_file = _args.cf
+adb_path = _args.adb
+set_current_dir(_args.cd)
+cmd = "%s logcat" % (adb_path,)
+# def cmd_exists(cmd):
+#     return subprocess.call("type " + cmd, shell=True,
+#         stdout=subprocess.PIPE, stderr=subprocess.PIPE) == 0
+#
+# if cmd_exists(adb_path):
+#     print "Error: adb.exe not found. Current path: %s" % adb_path
 
 
-def getColor(v):
-    if v == "g":
-        return bcolors.OKGREEN
-    if v == "e":
-        return bcolors.HEADER
-    if v == "w":
-        return bcolors.WARNING
-    if v == "i":
-        return bcolors.BOLD
-    if v == "c":
-        return bcolors.FAIL
+help_string = """
+Available commands:
 
-    return ""
+:q                          Quit.
+:o                          Open current folder.
+:w [file name]              Write current log to file.
+:wf [file name]             Write filtered log into file.
+:wq [file name]             Write log into file and quit.
+:wl                         Write log to the last saved file.
+:i <Any string>             Add ignore string to filter buffer.
+:c                          Clean device log and current buffer.
+:cd [directory]             Change or show directory where log files will be saved.
+/[text]                     Apply fast buffer filtering, press Enter to save filter.
+                                press ESC to clean filter
 
-
-def important(color, line):
-    global buffer_filtered
-    index = len(buffer) - 1
-    line = "[%d]" % index + line
-    buffer_filtered.append(line)
-    print getColor(color), line, bcolors.ENDC
+UP,DOWN,PAGE_DOWN,PAGE_UP   Navigation, press ESC to return normal mode
 
 
+
+contacts:   %s
+source:     %s
+
+
+press ESC to close help
+""" % (contacts_info, source_info)
+
+##
 # read config
 conf = []
 # conf.append("g;Firebase;")
@@ -91,8 +136,6 @@ conf = []
 
 # add from args
 
-
-
 for c in conf:
     cl = c.strip(' \t\n\r');
     if len(cl) == 0:
@@ -116,57 +159,50 @@ for c in conf:
     words.append((color, req, add))
 
 
-def checkLine(line):
-    l = line.lower()
+# def checkLine(line):
+#     l = line.lower()
+#
+#     for ig in ignore:
+#         if ig in l:
+#             return
+#
+#     index = len(buffer)
+#     line_c = "[%d]" % index + line
+#     buffer.append(line_c)
+#
+#     if const_wait in line:
+#         print getSystemColor(), line, bcolors.ENDC
+#
+#     for w in words:
+#         found = True
+#         for req in w[1]:
+#             if not req in l:
+#                 found = False
+#                 break
+#
+#         if not found:
+#             continue
+#
+#         found = False
+#         if w[2]:
+#             for add in w[2]:
+#                 if add.lower() in l:
+#                     found = True
+#                     break
+#         else:
+#             found = True
+#
+#         if found:
+#             important(w[0], line)
+#             break
 
-    for ig in ignore:
-        if ig in l:
-            return
+def init_command():
+    pass
 
-    index = len(buffer)
-    line_c = "[%d]" % index + line
-    buffer.append(line_c)
-
-    if const_wait in line:
-        print getSystemColor(), line, bcolors.ENDC
-
-    for w in words:
-        found = True
-        for req in w[1]:
-            if not req in l:
-                found = False
-                break
-
-        if not found:
-            continue
-
-        found = False
-        if w[2]:
-            for add in w[2]:
-                if add.lower() in l:
-                    found = True
-                    break
-        else:
-            found = True
-
-        if found:
-            important(w[0], line)
-            break
-
-
-running = True
-
-line = ""
-user_command = ""
-last_user_command = ""
-indent = 0  # from bot
-user_filter = ""
-show_info = True
-view_line = None
-last_saved_fname = ""
 
 def open_last_log_dir():
     os.system("start .")
+
 
 def is_ignored(l):
     for ig in ignore:
@@ -195,7 +231,7 @@ def save_command(fname, bf):
     global last_saved_fname
     dt = "1.1.2017"
     if fname == "" or fname is None:
-        fname = "%s.log" % dt
+        fname = "%s%s.log" % (current_dir, dt)
 
     last_saved_fname = fname
     with open(fname, 'w') as f:
@@ -204,7 +240,7 @@ def save_command(fname, bf):
 
 
 def adb_clean_command():
-    os.system("adb logcat -c")
+    os.system("%s logcat -c" % (adb_path,))
     buffer[:] = []
 
 
@@ -227,6 +263,26 @@ def filter_buffer():
             buffer_filtered.append(line)
 
 
+def help_command():
+    global show_help
+    show_help = True
+
+
+def cleen_up(screen, from_line):
+    wh, ww = screen.dimensions
+    for j in xrange(from_line, ww - 1):
+        screen.print_at(("{0:%d}" % (ww)).format(" "), 0, j)
+
+
+def print_help(screen):
+    cleen_up(screen, 1)
+    help = help_string.split("\n")
+    posy = 0
+    for l in help:
+        screen.print_at(l, 0, posy)
+        posy += 1
+
+
 def print_buffer(screen):
     # TODO: optimize output
     global user_command
@@ -242,19 +298,38 @@ def print_buffer(screen):
         screen.paint(value, 0, printy)
         printy += 1
 
-    for j in xrange(printy, max_count + 1):
-        screen.print_at(("{0:%d}" % (ww)).format(" "), 0, j)
+    cleen_up(screen, printy)
 
 
 def handle_command(command):
     global user_filter
-    if not command.startswith(":"):
+
+    if command.startswith("/"):
         return last_user_command
+
+    if not command.startswith(":"):
+        return "'%s' is not command. Type :h for help." % command
 
     if command == ":q":
         raise KeyboardInterrupt()
+    elif command == ":h":
+        help_command()
     elif command == ":o":
         open_last_log_dir()
+    elif command.startswith(":cd"):
+        value = command[3:].strip()
+        if value == "":
+            if current_dir == "":
+                return os.getcwd()
+            else:
+                return current_dir
+        else:
+            return "New dir: " + set_current_dir(value)
+    elif command.startswith(":wf"):
+        pass
+        fname = command[3:].strip()
+        save_command(fname, buffer_filtered)
+        return "Saved: " + last_saved_fname
     elif command.startswith(":wq"):
         command = command[:2] + command[3:]
         handle_command(command)
@@ -264,7 +339,7 @@ def handle_command(command):
         add_ignore_command(value)
         return "Ignored: '%s'" % value
     elif command.startswith(":wl"):
-        save_command(last_saved_fname, buffer)  # todo: fix copypaste
+        save_command(last_saved_fname, buffer)
         return "Saved: " + last_saved_fname
     elif command.startswith(":w"):
         fname = command[2:].strip()
@@ -273,7 +348,7 @@ def handle_command(command):
     elif command == ":clean" or command == ":c":
         adb_clean_command()
     else:
-        return "Unknown command: %s" % command
+        return "Unknown command: %s. Type :h for help." % command
 
     return command
 
@@ -301,10 +376,15 @@ def handle_user_input(c):
     global user_filter
     global view_line
     global indent
+    global show_help
+    ask = "Press ESC again to exit"
+
     if c:
         if c == Screen.KEY_ESCAPE:
-            if view_line is None and user_filter == "" and user_command == "":
-                ask = "Press ESC again to exit"
+            # last_user_command = ""
+            if show_help:
+                show_help = False
+            elif view_line is None and user_filter == "" and user_command == "":
                 if ask == last_user_command:
                     raise KeyboardInterrupt()
                 last_user_command = ask
@@ -314,7 +394,6 @@ def handle_user_input(c):
             else:
                 user_command = ""
                 user_filter = ""
-
         elif c == Screen.KEY_BACK:
             user_command = user_command[0:len(user_command) - 1]
             if len(user_command) == 0 and len(user_filter) != 0:
@@ -332,6 +411,9 @@ def handle_user_input(c):
             user_command = ""
         elif c in xrange(32, 126):
             user_command += str(chr(c))
+
+            # if c != Screen.KEY_ESCAPE and last_user_command == ask:
+            #     last_user_command = ""
 
     if user_command.startswith("/"):
         user_filter = user_command[1:]
@@ -351,11 +433,11 @@ def print_info(screen):
 
 def print_user_command(screen):
     wh, ww = screen.dimensions
-    mwc = ww - ww / 3
-    value = ("{0:%d}" % (mwc,)).format(user_command)
-    value2 = ("{:>%d}" % (ww - mwc,)).format(last_user_command)
-    screen.print_at(value, 0, wh - 1, colour=Screen.COLOUR_CYAN)
-    screen.print_at(value2, mwc, wh - 1, colour=Screen.COLOUR_YELLOW)
+    v2 = ww - ww / 5
+    value = ("{0:%d}" % (ww)).format(user_command)
+    value2 = ("{:>%d}" % (v2)).format(last_user_command)
+    screen.print_at(value, 0, wh - 1, colour=Screen.COLOUR_WHITE)
+    screen.print_at(value2, ww - v2, wh - 1, colour=Screen.COLOUR_YELLOW)
 
 
 def read_output(q):
@@ -366,6 +448,9 @@ def read_output(q):
                 q.put(line.strip())
     except KeyboardInterrupt:
         exit()
+    except Exception:
+        print "Failed to execute command: '%s'. Check adb.exe added to PATH" % cmd
+        q.put(interupt_command)
 
 
 queue = Queue()
@@ -386,6 +471,8 @@ def update(screen):
         try:
             while 1:
                 line = queue.get_nowait()  # or q.get(timeout=.1)
+                if interupt_command == line:
+                    raise KeyboardInterrupt()
                 try_add_to_buffer(line)
 
         except Empty:
@@ -395,7 +482,10 @@ def update(screen):
 
         handle_user_input(screen.get_key())
 
-        print_buffer(screen)
+        if show_help:
+            print_help(screen)
+        else:
+            print_buffer(screen)
 
         print_user_command(screen)
 
@@ -405,6 +495,15 @@ def update(screen):
             raise ResizeScreenError("Screen resized")
 
 
+# Before startup
+
+if _args.init:
+    init_command()
+    exit()
+
+if _args.c:
+    adb_clean_command()
+
 while True:
     try:
         Screen.wrapper(update)
@@ -413,5 +512,9 @@ while True:
     except KeyboardInterrupt:
         break
         pass
+
+cmds = exit_commands.split(";")
+for c in cmds:
+    handle_command(":%s" % c)
 
 print "Done!"
