@@ -61,15 +61,15 @@ parser = argparse.ArgumentParser(prog=app_name,
                                        "e.g  smartlog -execute \"netstat -a\" -clean \"\"",
                                  description="Program prints stream output and provides bunch of useful features like filter, highlight. Type :h in program for more help.")
 parser.add_argument("-ec", default=exit_commands,
-                    help="Commands that will executed on exit splited by ';' e.g:  'w;q' will write file and open explorer. To see more commands type :h")
-parser.add_argument("-cf", default=conf_file, help="Specifies config file name. By default is '%s'" % (conf_file,))
-parser.add_argument("-cd", default=current_dir, help="Specifies directory where log files will be saved")
-parser.add_argument("-cs", default=False, action='store_const', const=True, help="Execute clean command on startup. By default %s" % clean_cmd)
+                    help="commands that will executed on exit splited by ';' e.g:  \"w;q\" will write file and open explorer. To see more commands type :h")
+parser.add_argument("-cf", default=conf_file, help="specifies config file name. By default is '%s'" % (conf_file,))
+parser.add_argument("-cd", default=current_dir, help="specifies directory where log files will be saved")
+parser.add_argument("-cs", default=False, action='store_const', const=True, help="execute clean command on startup. By default %s" % clean_cmd)
 parser.add_argument("--init", default=False, action='store_const', const=True,
-                    help="Creates default config file in app folder")
+                    help="creates default config file in app folder")
 parser.add_argument('--version', "-v", action='version', version="%s %s" % (app_name, version))
-parser.add_argument('-execute', default=execute_cmd, help="Specifies execute command that will output log stream. By default is %s" % execute_cmd)
-parser.add_argument('-clean', default=clean_cmd, help="Specifies clean command e.g. 'adb logcat -c'. Can be \"\"")
+parser.add_argument('-execute', default=execute_cmd, help="specifies execute command that will output log stream. By default is %s" % execute_cmd)
+parser.add_argument('-clean', default=clean_cmd, help="specifies clean command e.g. \"adb logcat -c\". Can be \"\"")
 _args = parser.parse_args()
 
 exit_commands = _args.ec
