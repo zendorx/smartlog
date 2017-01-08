@@ -37,7 +37,8 @@ last_saved_fname = ""
 show_help = False
 adb_path = "adb.exe"
 interupt_command = "__interupt_command__"
-
+execute_cmd = "adb logcat"
+clean_cmd = "adb logcat -c"
 
 def set_current_dir(value):
     global current_dir
@@ -52,24 +53,31 @@ def set_current_dir(value):
 ## Args
 
 parser = argparse.ArgumentParser(prog=app_name,
-                                 usage="\n  1)Install android SDK\n  2)Add '{$SDK}\platform-tools\\adb.exe' to PATH or setup -adb <path>\n  3)Run programm\n  4)Type :h for more help",
-                                 description="Program prints adb logcat ouput and provides bunch of useful features. Type :h in program for more help.")
+                                 usage="\n  1)Install android SDK\n  "
+                                       "2)Add '{$SDK}\platform-tools\\adb.exe' to PATH or setup -adb <path>\n  "
+                                       "3)Run programm\n  "
+                                       "4)Type :h for more help \n\n"
+                                       "Or specify your own commands by passing -execute and -clean params\n"
+                                       "e.g  smartlog -execute \"netstat -a\" -clean \"\"",
+                                 description="Program prints stream output and provides bunch of useful features like filter, highlight. Type :h in program for more help.")
 parser.add_argument("-ec", default=exit_commands,
                     help="Commands that will executed on exit splited by ';' e.g:  'w;q' will write file and open explorer. To see more commands type :h")
 parser.add_argument("-cf", default=conf_file, help="Specifies config file name. By default is '%s'" % (conf_file,))
 parser.add_argument("-cd", default=current_dir, help="Specifies directory where log files will be saved")
-parser.add_argument("-c", default=False, action='store_const', const=True, help="Cleans adb console on startup")
+parser.add_argument("-cs", default=False, action='store_const', const=True, help="Execute clean command on startup. By default %s" % clean_cmd)
 parser.add_argument("--init", default=False, action='store_const', const=True,
                     help="Creates default config file in app folder")
 parser.add_argument('--version', "-v", action='version', version="%s %s" % (app_name, version))
-parser.add_argument('-adb', default=adb_path, help="Specifies adb.exe full path")
+parser.add_argument('-execute', default=execute_cmd, help="Specifies execute command that will output log stream. By default is %s" % execute_cmd)
+parser.add_argument('-clean', default=clean_cmd, help="Specifies clean command e.g. 'adb logcat -c'. Can be \"\"")
 _args = parser.parse_args()
 
 exit_commands = _args.ec
 conf_file = _args.cf
-adb_path = _args.adb
+exec_cmd = _args.execute_cmd
+clean_cmd = _args.clean
 set_current_dir(_args.cd)
-cmd = "%s logcat" % (adb_path,)
+
 # def cmd_exists(cmd):
 #     return subprocess.call("type " + cmd, shell=True,
 #         stdout=subprocess.PIPE, stderr=subprocess.PIPE) == 0
@@ -239,8 +247,8 @@ def save_command(fname, bf):
             f.write("%s\n" % line)
 
 
-def adb_clean_command():
-    os.system("%s logcat -c" % (adb_path,))
+def clean_command():
+    os.system(clean_cmd)
     buffer[:] = []
 
 
@@ -346,7 +354,7 @@ def handle_command(command):
         save_command(fname, buffer)
         return "Saved: " + last_saved_fname
     elif command == ":clean" or command == ":c":
-        adb_clean_command()
+        clean_command()
     else:
         return "Unknown command: %s. Type :h for help." % command
 
@@ -443,13 +451,13 @@ def print_user_command(screen):
 def read_output(q):
     try:
         while 1:
-            p = subprocess.Popen(cmd, stdout=subprocess.PIPE)
+            p = subprocess.Popen(exec_cmd, stdout=subprocess.PIPE)
             for line in iter(p.stdout.readline, b''):
                 q.put(line.strip())
     except KeyboardInterrupt:
         exit()
     except Exception:
-        print "Failed to execute command: '%s'. Check adb.exe added to PATH" % cmd
+        print "Failed to execute command: '%s'. Check adb.exe added to PATH" % exec_cmd
         q.put(interupt_command)
 
 
@@ -502,7 +510,7 @@ if _args.init:
     exit()
 
 if _args.c:
-    adb_clean_command()
+    clean_command()
 
 while True:
     try:
