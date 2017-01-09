@@ -1,22 +1,14 @@
 # coding=utf-8
 
 import argparse
+import logging as L
 import os
 import subprocess
 from Queue import Queue, Empty
 from threading import Thread
-import logging as L
+
 from asciimatics.exceptions import ResizeScreenError
 from asciimatics.screen import Screen
-import timeit
-
-class MT:
-    def __init__(self, id):
-        self.t = timeit.default_timer()
-        self.id = id
-    def __del__(self):
-        print "stamp: %s \t %f" % (self.id, timeit.default_timer()*1.0 - self.t*1.0)
-
 
 os.system("@echo off | chcp 1250 | @echo on")  # Turn on console colors on Windows
 
@@ -50,7 +42,9 @@ adb_path = "adb.exe"
 interrupt_command = "__interrupt_command__"
 execute_cmd = "adb logcat"
 clean_cmd = "adb logcat -c"
-L.basicConfig(filename="log.log", filemode="w", level=L.INFO)
+L.basicConfig(filename="log.log", filemode="w", level=L.DEBUG)
+
+need_reprint_buffer = True
 
 
 def set_current_dir(value):
@@ -147,15 +141,17 @@ def save_command(fname, bf):
         for line in bf:
             f.write("%s\n" % str(line))
 
+
 last_filtered_value = ""
+
+
 def filter_buffer():
     L.info("filter_buffer")
     global last_filtered_value
     global buffer_filtered
     buffer_filtered[:] = []
     if user_filter == "":
-        buffer_filtered = buffer_compiled[:]
-
+        return
     for line in buffer_compiled:
         if not is_line_filtered(line[2]):
             buffer_filtered.append(line)
@@ -167,8 +163,8 @@ def is_line_filtered(line):
         words = user_filter.lower().split(" ")
         for word in words:
             if not word in line.lower():
-                return False
-    return True
+                return True
+    return False
 
 
 def try_add_to_buffer(l):
@@ -178,6 +174,9 @@ def try_add_to_buffer(l):
     global buffer
     global buffer_filtered
     global buffer_compiled
+    global need_reprint_buffer
+
+    need_reprint_buffer = True
 
     buffer.append(l)
     comp = precompile_line(l, len(buffer) - 1)
@@ -189,6 +188,7 @@ def try_add_to_buffer(l):
 def check_ignores():
     global buffer
     buffer = [l for l in buffer if not is_ignored(l)]
+    precompile_buffer()
 
 
 def add_highlight_rule(l):
@@ -234,6 +234,7 @@ def precompile_line(line, index):
 
 
 def precompile_buffer():
+    global need_reprint_buffer
     L.info("precompile_buffer")
     global buffer_compiled
     buffer_compiled[:] = []
@@ -241,6 +242,7 @@ def precompile_buffer():
     for l in buffer:
         buffer_compiled.append(precompile_line(l, index))
         index += 1
+    need_reprint_buffer = True
 
 
 def read_file_command(fname, bf):
@@ -364,11 +366,18 @@ def print_help(screen):
 
 
 def print_buffer(screen):
-    MT("print_buffer")
-    bf = buffer_compiled
+    global need_reprint_buffer
+    global last_filtered_value
 
-    if user_filter != last_filtered_value:
-        filter_buffer()
+    if not need_reprint_buffer:
+        return
+
+    if user_filter == "":
+        last_filtered_value = ""
+        bf = buffer_compiled
+    else:
+        if user_filter != last_filtered_value:
+            filter_buffer()
         bf = buffer_filtered
 
     global user_command
@@ -378,12 +387,14 @@ def print_buffer(screen):
     start = max(start_from - indent - max_count, 0)
     printy = 1
     pbf = bf[start:start + max_count]
+
     for line in pbf:
         value = ("[%d]{0:%d}" % (line[0], ww)).format(line[2])
-        screen.paint(value, 0, printy, colour=line_tags[line[1]])
+        screen.paint(value, 0, printy)  # , colour=line_tags[line[1]]
         printy += 1
 
     clean_up(screen, printy)
+    need_reprint_buffer = False
 
 
 def handle_command(command):
@@ -459,8 +470,10 @@ def move(steps):
 
 def set_filter(words):
     global user_filter
+    global need_reprint_buffer
     user_filter = words
     filter_buffer()
+    need_reprint_buffer = True
 
 
 def handle_user_input(c):
@@ -473,6 +486,8 @@ def handle_user_input(c):
     global view_line
     global indent
     global show_help
+    global need_reprint_buffer
+
     ask = "Press ESC again to exit"
 
     if c == Screen.KEY_ESCAPE:
@@ -489,6 +504,7 @@ def handle_user_input(c):
         else:
             user_command = ""
             set_filter("")
+        need_reprint_buffer = True
     elif c == Screen.KEY_BACK:
         user_command = user_command[0:len(user_command) - 1]
         if len(user_command) == 0 and len(user_filter) != 0:
@@ -507,8 +523,8 @@ def handle_user_input(c):
     elif c in xrange(32, 126):
         user_command += str(chr(c))
 
-        # if c != Screen.KEY_ESCAPE and last_user_command == ask:
-        #     last_user_command = ""
+    if c != Screen.KEY_ESCAPE and last_user_command == ask:
+        last_user_command = ""
 
     if user_command.startswith("/"):
         set_filter(user_command[1:])
@@ -517,7 +533,11 @@ def handle_user_input(c):
 def print_info(screen):
     if show_info:
         wh, ww = screen.dimensions
-        value = "[%d:%d]     " % (len(buffer_filtered), len(buffer))
+
+        count = len(buffer)
+        if user_filter != "":
+            count = len(buffer_filtered)
+        value = "[%d:%d]     " % (count, len(buffer))
         if view_line:
             value += "indent: %d     " % indent
         if len(user_filter):
@@ -528,11 +548,10 @@ def print_info(screen):
 
 def print_user_command(screen):
     wh, ww = screen.dimensions
-    v2 = ww - ww / 5
-    value = ("{0:%d}" % (ww)).format(user_command)
-    value2 = ("{:>%d}" % (v2)).format(last_user_command)
+    value = ("{0:%d}" % (ww / 2)).format(user_command)
+    value2 = ("{:>%d}" % (ww / 2)).format(last_user_command)
+    screen.paint(value2, ww / 2, wh - 1, colour=Screen.COLOUR_YELLOW)
     screen.paint(value, 0, wh - 1, colour=Screen.COLOUR_WHITE)
-    screen.paint(value2, ww - v2, wh - 1, colour=Screen.COLOUR_YELLOW)
 
 
 def read_output(q):
@@ -556,7 +575,6 @@ def update(screen):
     global user_command
 
     while True:
-        MT("main_loop")
         # screen.print_at('Hello world!',
         #                 randint(0, screen.width), randint(0, screen.height),
         #                 colour=randint(0, screen.colours - 1),
@@ -602,6 +620,7 @@ readThread.start()
 
 while True:
     try:
+        need_reprint_buffer = True
         Screen.wrapper(update)
     except ResizeScreenError:
         continue
@@ -614,7 +633,7 @@ for c in cmds:
     handle_command(":%s" % c)
 
 # save_command("highlights.txt", highlights)
-# save_command("filtered.txt",  buffer_filtered)
-# save_command("compiled.txt",  buffer_compiled)
+save_command("filtered.txt", buffer_filtered)
+save_command("compiled.txt", buffer_compiled)
 
 print "Done!"
