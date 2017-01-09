@@ -5,9 +5,18 @@ import os
 import subprocess
 from Queue import Queue, Empty
 from threading import Thread
-
+import logging as L
 from asciimatics.exceptions import ResizeScreenError
 from asciimatics.screen import Screen
+import timeit
+
+class MT:
+    def __init__(self, id):
+        self.t = timeit.default_timer()
+        self.id = id
+    def __del__(self):
+        print "stamp: %s \t %f" % (self.id, timeit.default_timer()*1.0 - self.t*1.0)
+
 
 os.system("@echo off | chcp 1250 | @echo on")  # Turn on console colors on Windows
 
@@ -15,8 +24,10 @@ os.system("@echo off | chcp 1250 | @echo on")  # Turn on console colors on Windo
 const_wait = "- waiting for device -"
 const_ignore = "ignore:"
 version = "0.3"
-app_name = "Smart Logcat"
-buffer = []
+app_name = "SmartLog"
+buffer = []  # original buffer
+buffer_compiled = []  # Cashed highlighted buffer with tags and lower cased lines,  (index, tag, text)
+highlights = []  # Rules for highlight (tag, [req], [nreq])
 buffer_filtered = []
 words = []
 ignore = []
@@ -36,9 +47,11 @@ view_line = None
 last_saved_fname = ""
 show_help = False
 adb_path = "adb.exe"
-interupt_command = "__interupt_command__"
+interrupt_command = "__interrupt_command__"
 execute_cmd = "adb logcat"
 clean_cmd = "adb logcat -c"
+L.basicConfig(filename="log.log", filemode="w", level=L.INFO)
+
 
 def set_current_dir(value):
     global current_dir
@@ -54,8 +67,8 @@ def set_current_dir(value):
 
 parser = argparse.ArgumentParser(prog=app_name,
                                  usage="\n  1)Install android SDK\n  "
-                                       "2)Add '{$SDK}\platform-tools\\adb.exe' to PATH or setup -adb <path>\n  "
-                                       "3)Run programm\n  "
+                                       "2)Add '{$SDK}\platform-tools\\adb.exe' to the PATH or setup -adb <path>\n  "
+                                       "3)Run program\n  "
                                        "4)Type :h for more help \n\n"
                                        "Or specify your own commands by passing -execute and -clean params\n"
                                        "e.g  smartlog -execute \"netstat -a\" -clean \"\"",
@@ -64,11 +77,13 @@ parser.add_argument("-ec", default=exit_commands,
                     help="commands that will executed on exit splited by ';' e.g:  \"w;q\" will write file and open explorer. To see more commands type :h")
 parser.add_argument("-cf", default=conf_file, help="specifies config file name. By default is '%s'" % (conf_file,))
 parser.add_argument("-cd", default=current_dir, help="specifies directory where log files will be saved")
-parser.add_argument("-cs", default=False, action='store_const', const=True, help="execute clean command on startup. By default %s" % clean_cmd)
+parser.add_argument("-cs", default=False, action='store_const', const=True,
+                    help="execute clean command on startup. By default %s" % clean_cmd)
 parser.add_argument("--init", default=False, action='store_const', const=True,
                     help="creates default config file in app folder")
 parser.add_argument('--version', "-v", action='version', version="%s %s" % (app_name, version))
-parser.add_argument('-execute', default=execute_cmd, help="specifies execute command that will output log stream. By default is %s" % execute_cmd)
+parser.add_argument('-execute', default=execute_cmd,
+                    help="specifies execute command that will output log stream. By default is %s" % execute_cmd)
 parser.add_argument('-clean', default=clean_cmd, help="specifies clean command e.g. \"adb logcat -c\". Can be \"\"")
 _args = parser.parse_args()
 
@@ -78,23 +93,18 @@ exec_cmd = _args.execute
 clean_cmd = _args.clean
 set_current_dir(_args.cd)
 
-# def cmd_exists(cmd):
-#     return subprocess.call("type " + cmd, shell=True,
-#         stdout=subprocess.PIPE, stderr=subprocess.PIPE) == 0
-#
-# if cmd_exists(adb_path):
-#     print "Error: adb.exe not found. Current path: %s" % adb_path
-
-
 help_string = """
 Available commands:
 
 :q                          Quit.
 :o                          Open current folder.
-:w [file name]              Write current log to file.
+:w  [file name]              Write current log to file.
 :wf [file name]             Write filtered log into file.
 :wq [file name]             Write log into file and quit.
 :wl                         Write log to the last saved file.
+:wc [file name]             Write all changes to config file
+:cc <file name>             Change current config file
+:rc [file name]             Read current config file
 :i <Any string>             Add ignore string to filter buffer.
 :c                          Clean device log and current buffer.
 :cd [directory]             Change or show directory where log files will be saved.
@@ -112,103 +122,210 @@ source:     %s
 press ESC to close help
 """ % (contacts_info, source_info)
 
-##
-# read config
+weights = { "e": 10, "w": 9, "d": 7, "l": 100, "n": 1 }
+
+line_tags = {  # Line tags
+    "e": Screen.COLOUR_RED,  # Error
+    "w": Screen.COLOUR_YELLOW,  # Warning
+    "d": Screen.COLOUR_MAGENTA,  # Debug
+    "l": Screen.COLOUR_GREEN,  # Lookup
+    "n": Screen.COLOUR_WHITE,  # Normal
+}
+
 conf = []
-# conf.append("g;Firebase;")
-# conf.append("w;SDL;ASsert")
-# conf.append("e;SDL;Error")
-# conf.append("e;NOTNULL")
-# conf.append("c;Anr")
-# conf.append("    ")
-# conf.append("i;SDL;token")
-# conf.append("ignore:smd Interface open failed errno")
-# conf.append("ignore:Diag_LSM_Init: Failed to open handle to diag driver")
-# conf.append("ignore:BatteryMeterView")
-# conf.append("ignore:VoIPInterfaceManager")
-# conf.append("ignore:Recents_TaskView")
-# conf.append("ignore:ConnectivityService")
-# conf.append("ignore:DisplayPowerController")
-# conf.append("ignore:TimaService")
-# conf.append("ignore:SurfaceFlinger")
-# conf.append("ignore:NetworkStats")
-# conf.append("ignore:NetworkController")
-# conf.append("ignore:InputManager")
-# conf.append("ignore:DataRouter")
-# conf.append("ignore:BatteryService")
-# conf.append("ignore:STATUSBAR-WifiQuickSettingButton")
-# conf.append("ignore:STATUSBAR-QSTileView")
-# conf.append("ignore:PowerManagerService")
 
 
+def save_command(fname, bf):
+    L.info("save_command")
+    global last_saved_fname
+    dt = "1.1.2017"
+    if fname == "" or fname is None:
+        fname = "%s%s.log" % (current_dir, dt)
 
-# add from args
+    last_saved_fname = fname
+    with open(fname, 'w') as f:
+        for line in bf:
+            f.write("%s\n" % str(line))
 
-for c in conf:
-    cl = c.strip(' \t\n\r');
-    if len(cl) == 0:
-        continue
+last_filtered_value = ""
+def filter_buffer():
+    L.info("filter_buffer")
+    global last_filtered_value
+    global buffer_filtered
+    buffer_filtered[:] = []
+    if user_filter == "":
+        buffer_filtered = buffer_compiled[:]
 
-    if cl.startswith(const_ignore):
-        ignore.append(cl[len(const_ignore):].lower())
-        continue
-
-    data = c.lower().split(";")
-
-    if len(data) == 0:
-        print "Wrong params in " + c
-        exit()
-
-    color = data[0]
-    req = data[1].split(",")
-    add = None
-    if len(data) > 2:
-        add = data[2].split(",")
-    words.append((color, req, add))
+    for line in buffer_compiled:
+        if not is_line_filtered(line[2]):
+            buffer_filtered.append(line)
+    last_filtered_value = user_filter
 
 
-# def checkLine(line):
-#     l = line.lower()
-#
-#     for ig in ignore:
-#         if ig in l:
-#             return
-#
-#     index = len(buffer)
-#     line_c = "[%d]" % index + line
-#     buffer.append(line_c)
-#
-#     if const_wait in line:
-#         print getSystemColor(), line, bcolors.ENDC
-#
-#     for w in words:
-#         found = True
-#         for req in w[1]:
-#             if not req in l:
-#                 found = False
-#                 break
-#
-#         if not found:
-#             continue
-#
-#         found = False
-#         if w[2]:
-#             for add in w[2]:
-#                 if add.lower() in l:
-#                     found = True
-#                     break
-#         else:
-#             found = True
-#
-#         if found:
-#             important(w[0], line)
-#             break
+def is_line_filtered(line):
+    if len(user_filter):
+        words = user_filter.lower().split(" ")
+        for word in words:
+            if not word in line.lower():
+                return False
+    return True
+
+
+def try_add_to_buffer(l):
+    if is_ignored(l):
+        return
+
+    global buffer
+    global buffer_filtered
+    global buffer_compiled
+
+    buffer.append(l)
+    comp = precompile_line(l, len(buffer) - 1)
+    buffer_compiled.append(comp)
+    if user_filter != "" and not is_line_filtered(comp[2]):
+        buffer_filtered.append(comp)
+
+
+def check_ignores():
+    global buffer
+    buffer = [l for l in buffer if not is_ignored(l)]
+
+
+def add_highlight_rule(l):
+    global highlights
+    tag = l[0]
+    right = l[2:].split(";")
+    req = [x.strip().lower() for x in right[0].split(",") if len(x.strip())]
+    nreq = []
+    if len(right) > 1:
+        nreq = [x.strip().lower() for x in right[1].split(",") if len(x.strip())]
+
+    result = (tag, req, nreq)
+    current = 0
+    for h in highlights:
+        if weights[tag] >= weights[h[0]]:
+            highlights.insert(current, result)
+            return
+        current += 1
+    else:
+        highlights.append(result)
+
+
+def precompile_line(line, index):
+    tag = "n"
+    ll = line.lower()
+    for h in highlights:
+        for r in h[1]:
+            if not r in ll:
+                break
+        else:
+            if len(h[2]) == 0:
+                tag = h[0]
+            else:
+                for nr in h[2]:
+                    if nr in ll:
+                        tag = h[0]
+                        break
+
+        if tag != "n":
+            break
+
+    return (index, tag, line)
+
+
+def precompile_buffer():
+    L.info("precompile_buffer")
+    global buffer_compiled
+    buffer_compiled[:] = []
+    index = 0
+    for l in buffer:
+        buffer_compiled.append(precompile_line(l, index))
+        index += 1
+
+
+def read_file_command(fname, bf):
+    L.info("read_file_command")
+    with open(fname, "r") as f:
+        for line in f:
+            bf.append(line)
+
+
+def add_ignore_command(value):
+    L.info("add_ignore_command")
+    ignore.append(value.lower().strip())
+
+
+def read_conf_command():
+    if not os.path.isfile(conf_file):
+        return
+    L.info("read_conf_command")
+
+    global ignore
+    global conf
+
+    conf[:] = []
+    read_file_command(conf_file, conf)
+    for l in conf:
+        if l.startswith("#"):
+            continue
+        if l.strip() == "":
+            continue
+        if l.startswith("ignore:"):
+            add_ignore_command(l[7:])
+            continue
+        add_highlight_rule(l)
+    precompile_buffer()
+
+
+def save_conf(fname):
+    L.info("save_conf")
+    save_command(fname, conf)
+
 
 def init_command():
-    pass
+    L.info("init_command")
+    conf.append("#Syntax:   <TAG>;[RequiredWord1],[RequiredWord2]...;[NotRequiredWord1]..")
+    conf.append("#Tags:")
+    conf.append("#  'e' - Error, red color")
+    conf.append("#  'w' - Warning, yellow color")
+    conf.append("#  'd' - Debug, magenta color")
+    conf.append("#  'l' - Lookup, green color, don't use this color in config. ")
+    conf.append("#        Type command in program :l MyAppName;Password "
+                "for highlight password lines(or something else) in you program")
+    conf.append("")
+    conf.append("# Few examples: ")
+    conf.append("e;MyApp;Error,Crash")
+    conf.append("w;MyApp;Warning,not found,")
+    conf.append("d;;Debug,")
+    conf.append("d;Anr(")
+    conf.append("")
+    conf.append("")
+    conf.append("#Ingore next items(Also you can type :i <str> command while program run: ")
+    conf.append("#ignore will completely remove lines from output")
+    conf.append("ignore:smd Interface open failed errno")
+    conf.append("ignore:Diag_LSM_Init: Failed to open handle to diag driver")
+    conf.append("ignore:BatteryMeterView")
+    conf.append("ignore:VoIPInterfaceManager")
+    conf.append("ignore:Recents_TaskView")
+    conf.append("ignore:ConnectivityService")
+    conf.append("ignore:DisplayPowerController")
+    conf.append("ignore:TimeService")
+    conf.append("ignore:SurfaceFlinger")
+    conf.append("ignore:NetworkStats")
+    conf.append("ignore:NetworkController")
+    conf.append("ignore:InputManager")
+    conf.append("ignore:DataRouter")
+    conf.append("ignore:BatteryService")
+    conf.append("ignore:STATUSBAR-WifiQuickSettingButton")
+    conf.append("ignore:STATUSBAR-QSTileView")
+    conf.append("ignore:PowerManagerService")
+    save_conf(conf_file)
+    print "Config saved: %s" % conf_file
+    exit()
 
 
 def open_last_log_dir():
+    L.info("open_last_log_dir")
     os.system("start .")
 
 
@@ -219,97 +336,58 @@ def is_ignored(l):
     return False
 
 
-def try_add_to_buffer(l):
-    global buffer
-    if not is_ignored(l):
-        buffer.append(l)
-
-
-def update_buffer():
-    global buffer
-    buffer = [l for l in buffer if not is_ignored(l)]
-
-
-def add_ignore_command(value):
-    ignore.append(value.lower().strip())
-    update_buffer()
-
-
-def save_command(fname, bf):
-    global last_saved_fname
-    dt = "1.1.2017"
-    if fname == "" or fname is None:
-        fname = "%s%s.log" % (current_dir, dt)
-
-    last_saved_fname = fname
-    with open(fname, 'w') as f:
-        for line in bf:
-            f.write("%s\n" % line)
-
-
 def clean_command():
+    L.info("clean_command")
     os.system(clean_cmd)
     buffer[:] = []
 
 
-def filter_buffer():
-    global buffer_filtered
-    buffer_filtered[:] = []
-    for line in buffer:
-        # first check
-
-        if len(user_filter):
-            flist = user_filter.split(" ")
-            con_all = True
-            for fpart in flist:
-                if not fpart.lower() in line.lower():
-                    con_all = False
-                    break
-            if con_all:
-                buffer_filtered.append(line)
-        else:
-            buffer_filtered.append(line)
-
-
 def help_command():
+    L.info("help_command")
     global show_help
     show_help = True
 
 
-def cleen_up(screen, from_line):
+def clean_up(screen, from_line):
     wh, ww = screen.dimensions
     for j in xrange(from_line, ww - 1):
-        screen.print_at(("{0:%d}" % (ww)).format(" "), 0, j)
+        screen.paint(("{0:%d}" % (ww)).format(" "), 0, j)
 
 
 def print_help(screen):
-    cleen_up(screen, 1)
+    clean_up(screen, 1)
     help = help_string.split("\n")
     posy = 0
     for l in help:
-        screen.print_at(l, 0, posy)
+        screen.paint(l, 0, posy)
         posy += 1
 
 
 def print_buffer(screen):
-    # TODO: optimize output
+    MT("print_buffer")
+    bf = buffer_compiled
+
+    if user_filter != last_filtered_value:
+        filter_buffer()
+        bf = buffer_filtered
+
     global user_command
     wh, ww = screen.dimensions
-    filter_buffer()
-
     max_count = wh - 2
-    start_from = view_line if view_line else len(buffer_filtered)
+    start_from = view_line if view_line else len(bf)
     start = max(start_from - indent - max_count, 0)
     printy = 1
-    for line in buffer_filtered[start: start + max_count]:
-        value = ("{0:%d}" % (ww)).format(line)
-        screen.paint(value, 0, printy)
+    pbf = bf[start:start + max_count]
+    for line in pbf:
+        value = ("[%d]{0:%d}" % (line[0], ww)).format(line[2])
+        screen.paint(value, 0, printy, colour=line_tags[line[1]])
         printy += 1
 
-    cleen_up(screen, printy)
+    clean_up(screen, printy)
 
 
 def handle_command(command):
+    L.info("handle_command")
     global user_filter
 
     if command.startswith("/"):
@@ -345,6 +423,7 @@ def handle_command(command):
     elif command.startswith(":i"):
         value = command[2:].strip()
         add_ignore_command(value)
+        check_ignores()
         return "Ignored: '%s'" % value
     elif command.startswith(":wl"):
         save_command(last_saved_fname, buffer)
@@ -378,53 +457,61 @@ def move(steps):
         view_line = None
 
 
+def set_filter(words):
+    global user_filter
+    user_filter = words
+    filter_buffer()
+
+
 def handle_user_input(c):
+    if not c:
+        return
+    L.info("handle_user_input")
+
     global user_command
     global last_user_command
-    global user_filter
     global view_line
     global indent
     global show_help
     ask = "Press ESC again to exit"
 
-    if c:
-        if c == Screen.KEY_ESCAPE:
-            # last_user_command = ""
-            if show_help:
-                show_help = False
-            elif view_line is None and user_filter == "" and user_command == "":
-                if ask == last_user_command:
-                    raise KeyboardInterrupt()
-                last_user_command = ask
-            elif view_line:
-                view_line = None
-                indent = 0
-            else:
-                user_command = ""
-                user_filter = ""
-        elif c == Screen.KEY_BACK:
-            user_command = user_command[0:len(user_command) - 1]
-            if len(user_command) == 0 and len(user_filter) != 0:
-                user_filter = ""
-        elif c == Screen.KEY_UP:
-            move(3)
-        elif c == Screen.KEY_DOWN:
-            move(-3)
-        elif c == Screen.KEY_PAGE_UP:
-            move(35)
-        elif c == Screen.KEY_PAGE_DOWN:
-            move(-35)
-        elif c == 13:
-            last_user_command = handle_command(user_command)
+    if c == Screen.KEY_ESCAPE:
+        # last_user_command = ""
+        if show_help:
+            show_help = False
+        elif view_line is None and user_filter == "" and user_command == "":
+            if ask == last_user_command:
+                raise KeyboardInterrupt()
+            last_user_command = ask
+        elif view_line:
+            view_line = None
+            indent = 0
+        else:
             user_command = ""
-        elif c in xrange(32, 126):
-            user_command += str(chr(c))
+            set_filter("")
+    elif c == Screen.KEY_BACK:
+        user_command = user_command[0:len(user_command) - 1]
+        if len(user_command) == 0 and len(user_filter) != 0:
+            set_filter("")
+    elif c == Screen.KEY_UP:
+        move(3)
+    elif c == Screen.KEY_DOWN:
+        move(-3)
+    elif c == Screen.KEY_PAGE_UP:
+        move(35)
+    elif c == Screen.KEY_PAGE_DOWN:
+        move(-35)
+    elif c == 13:
+        last_user_command = handle_command(user_command)
+        user_command = ""
+    elif c in xrange(32, 126):
+        user_command += str(chr(c))
 
-            # if c != Screen.KEY_ESCAPE and last_user_command == ask:
-            #     last_user_command = ""
+        # if c != Screen.KEY_ESCAPE and last_user_command == ask:
+        #     last_user_command = ""
 
     if user_command.startswith("/"):
-        user_filter = user_command[1:]
+        set_filter(user_command[1:])
 
 
 def print_info(screen):
@@ -444,8 +531,8 @@ def print_user_command(screen):
     v2 = ww - ww / 5
     value = ("{0:%d}" % (ww)).format(user_command)
     value2 = ("{:>%d}" % (v2)).format(last_user_command)
-    screen.print_at(value, 0, wh - 1, colour=Screen.COLOUR_WHITE)
-    screen.print_at(value2, ww - v2, wh - 1, colour=Screen.COLOUR_YELLOW)
+    screen.paint(value, 0, wh - 1, colour=Screen.COLOUR_WHITE)
+    screen.paint(value2, ww - v2, wh - 1, colour=Screen.COLOUR_YELLOW)
 
 
 def read_output(q):
@@ -458,20 +545,18 @@ def read_output(q):
         exit()
     except Exception:
         print "Failed to execute command: '%s'. Check adb.exe added to PATH" % exec_cmd
-        q.put(interupt_command)
+        q.put(interrupt_command)
 
 
 queue = Queue()
 readThread = Thread(target=read_output, args=(queue,))
-readThread.daemon = True
-readThread.start()
 
 
 def update(screen):
     global user_command
 
     while True:
-
+        MT("main_loop")
         # screen.print_at('Hello world!',
         #                 randint(0, screen.width), randint(0, screen.height),
         #                 colour=randint(0, screen.colours - 1),
@@ -479,7 +564,7 @@ def update(screen):
         try:
             while 1:
                 line = queue.get_nowait()  # or q.get(timeout=.1)
-                if interupt_command == line:
+                if interrupt_command == line:
                     raise KeyboardInterrupt()
                 try_add_to_buffer(line)
 
@@ -504,13 +589,16 @@ def update(screen):
 
 
 # Before startup
-
 if _args.init:
     init_command()
-    exit()
+
+read_conf_command()
 
 if _args.cs:
     clean_command()
+
+readThread.daemon = True
+readThread.start()
 
 while True:
     try:
@@ -524,5 +612,9 @@ while True:
 cmds = exit_commands.split(";")
 for c in cmds:
     handle_command(":%s" % c)
+
+# save_command("highlights.txt", highlights)
+# save_command("filtered.txt",  buffer_filtered)
+# save_command("compiled.txt",  buffer_compiled)
 
 print "Done!"
