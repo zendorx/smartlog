@@ -1,7 +1,6 @@
 # coding=utf-8
 
 import argparse
-import logging as L
 import os
 import subprocess
 from Queue import Queue, Empty
@@ -9,6 +8,9 @@ from threading import Thread
 
 from asciimatics.exceptions import ResizeScreenError
 from asciimatics.screen import Screen
+import logging
+from logging import getLogger
+L = getLogger(__name__)
 
 os.system("@echo off | chcp 1250 | @echo on")  # Turn on console colors on Windows
 
@@ -42,7 +44,7 @@ adb_path = "adb.exe"
 interrupt_command = "__interrupt_command__"
 execute_cmd = "adb logcat"
 clean_cmd = "adb logcat -c"
-L.basicConfig(filename="log.log", filemode="w", level=L.DEBUG)
+logging.basicConfig(filename="log.log", filemode="w", level=logging.DEBUG)
 
 need_reprint_buffer = True
 
@@ -390,7 +392,7 @@ def print_buffer(screen):
 
     for line in pbf:
         value = ("[%d]{0:%d}" % (line[0], ww)).format(line[2])
-        screen.paint(value, 0, printy)  # , colour=line_tags[line[1]]
+        screen.print_at(value, 0, printy, colour=line_tags[line[1]])
         printy += 1
 
     clean_up(screen, printy)
@@ -452,6 +454,7 @@ def handle_command(command):
 
 
 def move(steps):
+    return
     global indent
     global view_line
 
@@ -491,7 +494,6 @@ def handle_user_input(c):
     ask = "Press ESC again to exit"
 
     if c == Screen.KEY_ESCAPE:
-        # last_user_command = ""
         if show_help:
             show_help = False
         elif view_line is None and user_filter == "" and user_command == "":
@@ -575,10 +577,6 @@ def update(screen):
     global user_command
 
     while True:
-        # screen.print_at('Hello world!',
-        #                 randint(0, screen.width), randint(0, screen.height),
-        #                 colour=randint(0, screen.colours - 1),
-        #                 bg=randint(0, screen.colours - 1))
         try:
             while 1:
                 line = queue.get_nowait()  # or q.get(timeout=.1)
