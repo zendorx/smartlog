@@ -5,10 +5,10 @@ import os
 import subprocess
 from Queue import Queue, Empty
 from threading import Thread
-
+import time
 from asciimatics.exceptions import ResizeScreenError
 from asciimatics.screen import Screen
-import logging
+import getpass
 from logging import getLogger
 L = getLogger(__name__)
 
@@ -38,13 +38,19 @@ indent = 0  # from bot
 user_filter = ""
 show_info = True
 view_line = None
+default_file_name = "{t} {uid}.log"
 last_saved_fname = ""
 show_help = False
 adb_path = "adb.exe"
 interrupt_command = "__interrupt_command__"
 execute_cmd = "adb logcat"
 clean_cmd = "adb logcat -c"
-logging.basicConfig(filename="log.log", filemode="w", level=logging.DEBUG)
+
+process_id = ""
+process_lookup = ""
+process_lookup_enabled = False
+
+# logging.basicConfig(filename="log.log", filemode="w", level=logging.DEBUG)
 
 need_reprint_buffer = True
 
@@ -61,7 +67,7 @@ def set_current_dir(value):
 
 ## Args
 
-parser = argparse.ArgumentParser(prog=app_name,
+parser = argparse.ArgumentParser(prog=app_name,#todo: move to description
                                  usage="\n  1)Install android SDK\n  "
                                        "2)Add '{$SDK}\platform-tools\\adb.exe' to the PATH or setup -adb <path>\n  "
                                        "3)Run program\n  "
@@ -75,6 +81,7 @@ parser.add_argument("-cf", default=conf_file, help="specifies config file name. 
 parser.add_argument("-cd", default=current_dir, help="specifies directory where log files will be saved")
 parser.add_argument("-cs", default=False, action='store_const', const=True,
                     help="execute clean command on startup. By default %s" % clean_cmd)
+parser.add_argument("-pc", default=process_lookup, help="specifies process lookup string")
 parser.add_argument("--init", default=False, action='store_const', const=True,
                     help="creates default config file in app folder")
 parser.add_argument('--version', "-v", action='version', version="%s %s" % (app_name, version))
@@ -88,6 +95,11 @@ conf_file = _args.cf
 exec_cmd = _args.execute
 clean_cmd = _args.clean
 set_current_dir(_args.cd)
+process_lookup = _args.pc
+
+if len(process_lookup) > 0:
+    process_lookup_enabled = True
+    print "PC: '%s'" % process_lookup
 
 help_string = """
 Available commands:
@@ -104,6 +116,7 @@ Available commands:
 :i <Any string>             Add ignore string to filter buffer.
 :c                          Clean device log and current buffer.
 :cd [directory]             Change or show directory where log files will be saved.
+:pc [string]                Turn on/off process lookup.
 /[text]                     Apply fast buffer filtering, press Enter to save filter.
                                 press ESC to clean filter
 
@@ -131,16 +144,55 @@ line_tags = {  # Line tags
 conf = []
 
 
+def get_line_process(text):
+    s = text.find("(")
+    e = text.find(")")
+    return text[s + 1:e].strip()
+
+def find_process_id():
+    if not process_lookup:
+        return ""
+
+    for b in buffer:
+        if process_lookup in b:
+            return get_line_process(b)
+    else:
+        return ""
+
+def check_process_lookup_line(line):
+    global process_id
+    global need_reprint_buffer
+
+    if not process_lookup_enabled:
+        return
+
+    if process_id != "":
+        return
+
+    if process_lookup == "":
+        return
+
+    if process_lookup.lower() in line.lower():
+        process_id = get_line_process(line)
+        filter_buffer()
+        need_reprint_buffer = True
+
+
+
 def save_command(fname, bf):
-    L.info("save_command")
     global last_saved_fname
-    dt = "1.1.2017"
+
+    uid = getpass.getuser()
+    t = time.strftime("%m.%d (%H-%M)")
     if fname == "" or fname is None:
-        fname = "%s%s.log" % (current_dir, dt)
+        name = default_file_name.replace("{uid}", uid)
+        name = name.replace("{t}", t)
+        fname = current_dir + name
 
     last_saved_fname = fname
     with open(fname, 'w') as f:
         for line in bf:
+            print line
             f.write("%s\n" % str(line))
 
 
@@ -152,11 +204,14 @@ def filter_buffer():
     global last_filtered_value
     global buffer_filtered
     buffer_filtered[:] = []
-    if user_filter == "":
+
+    if user_filter == "" and not process_lookup_enabled:
         return
+
     for line in buffer_compiled:
         if not is_line_filtered(line[2]):
             buffer_filtered.append(line)
+
     last_filtered_value = user_filter
 
 
@@ -165,7 +220,13 @@ def is_line_filtered(line):
         words = user_filter.lower().split(" ")
         for word in words:
             if not word in line.lower():
-                return True
+                return True     # Trash line
+
+    if process_lookup_enabled and process_id != "":
+        lpid = get_line_process(line)
+        if process_id != lpid:
+            return True
+
     return False
 
 
@@ -185,6 +246,31 @@ def try_add_to_buffer(l):
     buffer_compiled.append(comp)
     if user_filter != "" and not is_line_filtered(comp[2]):
         buffer_filtered.append(comp)
+
+    check_process_lookup_line(comp[2])
+
+
+def process_lookup_command(value):
+    global process_lookup_enabled
+    global process_lookup
+    global process_id
+    global need_reprint_buffer
+    result = value
+    if value == "":
+        process_lookup_enabled = not process_lookup_enabled
+        if process_lookup_enabled:
+            result = "pc: ON"
+        else:
+            result = "pc: OFF"
+    else:
+        process_lookup_enabled = True
+        process_lookup = value
+        process_id = find_process_id()
+
+
+    filter_buffer()
+    need_reprint_buffer = True
+    return result
 
 
 def check_ignores():
@@ -211,6 +297,7 @@ def add_highlight_rule(l):
         current += 1
     else:
         highlights.append(result)
+
 
 
 def precompile_line(line, index):
@@ -341,9 +428,16 @@ def is_ignored(l):
 
 
 def clean_command():
+    global need_reprint_buffer
+    global process_id
     L.info("clean_command")
     os.system(clean_cmd)
     buffer[:] = []
+    buffer_compiled[:] = []
+    buffer_filtered[:] = []
+    need_reprint_buffer = True
+    process_id = ""
+    filter_buffer()
 
 
 def help_command():
@@ -374,11 +468,11 @@ def print_buffer(screen):
     if not need_reprint_buffer:
         return
 
-    if user_filter == "":
+    if user_filter == "" and not process_lookup_enabled:
         last_filtered_value = ""
         bf = buffer_compiled
     else:
-        if user_filter != last_filtered_value:
+        if user_filter != last_filtered_value and not process_lookup_enabled:
             filter_buffer()
         bf = buffer_filtered
 
@@ -392,7 +486,12 @@ def print_buffer(screen):
 
     for line in pbf:
         value = ("[%d]{0:%d}" % (line[0], ww)).format(line[2])
-        screen.print_at(value, 0, printy, colour=line_tags[line[1]])
+        try:
+            screen.paint(unicode(value, "utf-8"), 0, printy, colour=line_tags[line[1]])
+        except UnicodeDecodeError:
+            print "error ascii at line ", line
+            exit(1)
+
         printy += 1
 
     clean_up(screen, printy)
@@ -415,6 +514,9 @@ def handle_command(command):
         help_command()
     elif command == ":o":
         open_last_log_dir()
+    elif command.startswith(":pc"):
+        value = command[3:].strip()
+        return process_lookup_command(value)
     elif command.startswith(":cd"):
         value = command[3:].strip()
         if value == "":
@@ -544,6 +646,13 @@ def print_info(screen):
             value += "indent: %d     " % indent
         if len(user_filter):
             value += "filter: %s   " % user_filter
+
+        if process_lookup_enabled:
+            if process_id != "":
+                value += "pid: " + process_id
+            else:
+                value += "pid: None"
+
         value = ("{0:%d}" % (ww,)).format(value)
         screen.paint(value, 0, 0, colour=Screen.COLOUR_YELLOW)
 
@@ -631,7 +740,7 @@ for c in cmds:
     handle_command(":%s" % c)
 
 # save_command("highlights.txt", highlights)
-save_command("filtered.txt", buffer_filtered)
-save_command("compiled.txt", buffer_compiled)
+# save_command("filtered.txt", buffer_filtered)
+# save_command("compiled.txt", buffer_compiled)
 
 print "Done!"
