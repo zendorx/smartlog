@@ -107,7 +107,7 @@ Available commands:
 :q                          Quit.
 :o                          Open current folder.
 :w  [file name]              Write current log to file.
-:wf [file name]             Write filtered log into file.
+:wf [file name]             Write filtered log into file.code
 :wq [file name]             Write log into file and quit.
 :wl                         Write log to the last saved file.
 :wc [file name]             Write all changes to config file
