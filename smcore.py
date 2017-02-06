@@ -120,6 +120,10 @@ class SMBuffer():
     def get_compiled(self):
         return self.compiled
 
+    def save_to_file(self, name):
+        pass
+
+
 
 class SmartlogApp():
     def __init__(self):
@@ -133,6 +137,9 @@ class SmartlogApp():
 
     def set_command_exec(self, command):
         self.command = command
+
+    def get_filter(self):
+        return self.filter
 
     def remove_filter(self):
         self.filter[:] = []
