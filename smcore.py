@@ -5,10 +5,16 @@ from threading import Thread
 from logging import getLogger
 L = getLogger(__name__)
 
+def check_class(var, clazz):
+    if not isinstance(var, clazz):
+        err = "wrong type " + str(type(var)) + ", looking for " + str(clazz)
+        raise Exception(err)
+
 def error(text):
     print "\nError: ", str(text), "\n\n"
 
 def log(text):
+    return
     print str(text)
 
 class default():
@@ -46,6 +52,9 @@ class CompiledLine():
         self.tag = tag
         self.original = text
         self.text = text.lower()
+
+    def get_index(self):
+        return self.index
 
     def get_tag(self):
         return self.tag
@@ -102,22 +111,20 @@ class Reader():
             log("lines:" + str(lines))
         return lines
 
-def compile_lines(lines):
-    return [CompiledLine(index, x, default.get_tag("n")) for index, x in enumerate(lines)]
+def compile_lines(lines, total):
+    return [CompiledLine(total + index, x, default.get_tag("n")) for index, x in enumerate(lines)]
 
 class SMBuffer():
     def __init__(self):
-        self.lines = []
         self.compiled = []
 
     def add(self, compiled_lines):
-        self.lines.append(compiled_lines)
+        for i in compiled_lines:
+            check_class(i, CompiledLine)
+
         self.compiled.extend(compiled_lines)
 
     def get_lines(self):
-        return self.lines
-
-    def get_compiled(self):
         return self.compiled
 
     def save_to_file(self, name):
@@ -138,6 +145,9 @@ class SmartlogApp():
     def set_command_exec(self, command):
         self.command = command
 
+    def get_lines(self):
+        return self.buffer.get_lines()
+
     def get_filter(self):
         return self.filter
 
@@ -153,17 +163,20 @@ class SmartlogApp():
         self.new_line_callback = callback
 
     def get_filtered_buffer(self):#return filtered CompiledLine list
-        if len(self.filter):
-            return [x for x in self.buffer.get_compiled() if x.can_show(self.filter)]
+        if self.filter:
+            return [x for x in self.buffer.get_lines() if x.can_show(self.filter)]
         else:
-            return self.buffer.get_compiled()
+            return self.buffer.get_lines()
 
     def update(self):
         lines = self.reader.update()
 
         if len(lines):
-            compiled_lines = compile_lines(lines)
+            compiled_lines = compile_lines(lines, len(self.buffer.get_lines()))
             self.buffer.add(compiled_lines)
 
             if self.new_line_callback:
-                self.new_line_callback(compiled_lines)
+                if self.filter:
+                    self.new_line_callback([x for x in compiled_lines if x.can_show(self.filter)])
+                else:
+                    self.new_line_callback(compiled_lines)

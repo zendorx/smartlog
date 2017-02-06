@@ -55,14 +55,7 @@ process_lookup_enabled = False
 need_reprint_buffer = True
 
 
-def set_current_dir(value):
-    global current_dir
-    current_dir = value
-    if current_dir == ".":
-        current_dir = ""
-    if current_dir != "" and not (current_dir.endswith("\\") or current_dir.endswith("/")):
-        current_dir += "/"
-    return current_dir
+
 
 
 ## Args
