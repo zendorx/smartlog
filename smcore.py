@@ -51,7 +51,7 @@ def read_output(command, queue):
     try:
         while 1:
             p = subprocess.Popen(command, stdout=subprocess.PIPE, shell=True, universal_newlines=True)
-            print "subprocess id : %d" % (p.pid, )
+            # print "subprocess id : %d" % (p.pid, )
             for line in iter(p.stdout.readline, b''):
                 log("queue: " + line)
                 queue.put(line.strip().decode('866').encode("utf-8"))
@@ -85,6 +85,9 @@ class CompiledLine():
         self.tag = tag
         self.original = text
         self.text = text.lower()
+
+    def get_original(self):
+        return self.original
 
     def get_index(self):
         return self.index
@@ -130,8 +133,12 @@ class Reader():
             log("lines:" + str(lines))
         return lines
 
+
+
 def compile_lines(lines, total):
     return [CompiledLine(total + index, x, default.get_tag("n")) for index, x in enumerate(lines)]
+
+
 
 class SMBuffer():
     def __init__(self):
@@ -142,6 +149,9 @@ class SMBuffer():
             check_class(i, CompiledLine)
 
         self.compiled.extend(compiled_lines)
+
+    def clear(self):
+        self.compiled[:] = []
 
     def get_lines(self):
         return self.compiled
@@ -184,9 +194,12 @@ class SmartlogApp():
     def set_new_lines_callback(self, callback):
         self.new_line_callback = callback
 
+    def do_filter(self, lines):
+        return [x for x in lines if x.can_show(self.filter)]
+
     def get_filtered_buffer(self):#return filtered CompiledLine list
         if self.filter:
-            return [x for x in self.buffer.get_lines() if x.can_show(self.filter)]
+            return self.do_filter(self.buffer.get_lines())
         else:
             return self.buffer.get_lines()
 
@@ -199,6 +212,6 @@ class SmartlogApp():
 
             if self.new_line_callback:
                 if self.filter:
-                    self.new_line_callback([x for x in compiled_lines if x.can_show(self.filter)])
+                    self.new_line_callback(self.do_filter(compiled_lines))
                 else:
                     self.new_line_callback(compiled_lines)

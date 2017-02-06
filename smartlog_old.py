@@ -178,15 +178,10 @@ def save_command(fname, bf):
     uid = getpass.getuser()
     t = time.strftime("%m.%d (%H-%M)")
     if fname == "" or fname is None:
-        name = default_file_name.replace("{uid}", uid)
-        name = name.replace("{t}", t)
-        fname = current_dir + name
+
 
     last_saved_fname = fname
-    with open(fname, 'w') as f:
-        for line in bf:
-            print line
-            f.write("%s\n" % str(line))
+
 
 
 last_filtered_value = ""
