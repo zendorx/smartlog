@@ -4,6 +4,8 @@ from gui import *
 
 import argparse
 
+#todo Закрывать консольное окно после выхода
+#todo Скрывать консольное окно вообще
 
 #INFO-------------------------
 version = "0.4"
@@ -103,9 +105,12 @@ gui = AppGui(app)
 
 gui.update_title("Smartlog - " + exec_cmd)
 
-app.start_read()
+app.start_reading()
 
 while not gui.is_finished():
     app.update()
     gui.update()
 
+app.stop_reading()
+
+print "Done!"

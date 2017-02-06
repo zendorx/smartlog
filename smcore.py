@@ -1,7 +1,8 @@
 # defaults
 import subprocess
 from Queue import Queue, Empty
-from threading import Thread
+from threading import Thread, Event
+import threading
 from logging import getLogger
 L = getLogger(__name__)
 
@@ -16,6 +17,7 @@ def error(text):
 def log(text):
     return
     print str(text)
+
 
 class default():
     @staticmethod
@@ -45,6 +47,37 @@ class default():
         return tags[tag_shortcut]
 
 
+def read_output(command, queue):
+    try:
+        while 1:
+            p = subprocess.Popen(command, stdout=subprocess.PIPE, shell=True, universal_newlines=True)
+            print "subprocess id : %d" % (p.pid, )
+            for line in iter(p.stdout.readline, b''):
+                log("queue: " + line)
+                queue.put(line.strip().decode('866').encode("utf-8"))
+                if (threading.current_thread().is_stopped()):
+                    raise KeyboardInterrupt("")
+    except KeyboardInterrupt:
+        print "Finished"
+        exit()
+    except Exception:
+        error("Failed to execute command: '%s' " % command)
+        queue.put(default.interrupt())
+
+
+class StoppableThread(Thread):
+    def __init__(self, command, queue):
+        super(StoppableThread, self).__init__(target=read_output, args=(command, queue,))
+        self._stop = Event()
+        self.command = command
+
+    def stop(self):
+        self._stop.set()
+
+    def is_stopped(self):
+        return self._stop.isSet()
+
+
 
 class CompiledLine():
     def __init__(self, index, text, tag):
@@ -68,30 +101,16 @@ class CompiledLine():
                 return False
         return True
 
-
-
-def _read_output(command, queue):
-    try:
-        while 1:
-            p = subprocess.Popen(command, stdout=subprocess.PIPE, universal_newlines=True)
-            for line in iter(p.stdout.readline, b''):
-                log("queue: " + line)
-                queue.put(line.strip())
-    except KeyboardInterrupt:
-        exit()
-    except Exception:
-        error("Failed to execute command: '%s' " % command)
-        queue.put(default.interrupt())
-
-queue = Queue()
-
 class Reader():
     def __init__(self, command):
-        global queue
+        self.queue = Queue()
         self.set_command(command)
-        self.read_thread = Thread(target=_read_output, args=(command, queue,))
+        self.read_thread = StoppableThread(command, self.queue)
         self.read_thread.daemon = True
         self.read_thread.start()
+
+    def stop(self):
+        self.read_thread.stop()
 
     def set_command(self, command):
         self.command = command
@@ -100,7 +119,7 @@ class Reader():
         lines = []
         try:
             while 1:
-                line = queue.get_nowait()
+                line = self.queue.get_nowait()
                 if len(line):
                     log(line)
                 lines.append(line)
@@ -139,7 +158,10 @@ class SmartlogApp():
         self.command = default.command()
         self.new_line_callback = None
 
-    def start_read(self):
+    def stop_reading(self):
+        self.reader.stop()
+
+    def start_reading(self):
         self.reader = Reader(self.command)
 
     def set_command_exec(self, command):
