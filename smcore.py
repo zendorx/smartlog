@@ -4,6 +4,9 @@ from Queue import Queue, Empty
 from threading import Thread, Event
 import threading
 from logging import getLogger
+import os
+
+
 L = getLogger(__name__)
 
 def check_class(var, clazz):
@@ -167,6 +170,11 @@ class SmartlogApp():
         self.filter = []
         self.command = default.command()
         self.new_line_callback = None
+
+    def clear(self, command):
+        self.buffer.clear()
+        if command:
+            os.system(command)
 
     def stop_reading(self):
         self.reader.stop()

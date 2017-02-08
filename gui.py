@@ -116,9 +116,7 @@ class AppGui():
         self.clean_command = command
 
     def do_clean(self):
-        if self.clean_command:
-            os.system(self.clean_command)
-        self.app.get_lines().clear()
+        self.app.clear()
         self.redraw_lines()
 
     def __init__(self, app):
