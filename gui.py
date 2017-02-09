@@ -1,7 +1,8 @@
 import getpass
-import os
 import time
 from Tkinter import *
+import re
+
 
 from smcore import *
 
@@ -10,8 +11,13 @@ class AppGui():
     def update_status_bar(self):
         text = ""
 
+
         if self.last_saved_file:
             text += "Saved: " + self.last_saved_file + "               "
+
+        if self.pid_lookup_enabled:
+            text += "pid: %s" % (self.app.get_current_pid()) + "              "
+
 
         total = len(self.app.get_lines())
 
@@ -68,6 +74,9 @@ class AppGui():
         self.redraw_lines()
         self.ready_to_finish = False
 
+    def on_lines_changed(self):
+        self.redraw_lines()
+
     def on_new_lines(self, compiled_lines):
         self.textbox.configure(state=NORMAL)
         for line in compiled_lines:
@@ -119,6 +128,23 @@ class AppGui():
         self.app.clear()
         self.redraw_lines()
 
+    def set_pid_lookup(self, string):
+        self.pid_lookup = string
+        self.set_pid_lookup_enabled(True)
+        self.app.set_pid_lookup_string(string)
+        self.app.set_pid_filter_enabled(True)
+
+
+    def set_pid_lookup_enabled(self, value):
+        if not self.pid_lookup and value:
+            error("Cannot set pid lookup, pid lookup string is empty")
+            return
+
+        self.pid_lookup_enabled = value
+
+    def set_pid_mask(self, string):
+        self.app.set_pid_mask(re.compile(string))
+
     def __init__(self, app):
         self._filtered_count = 0
         self.app = app
@@ -130,8 +156,11 @@ class AppGui():
         self.set_current_folder("{t} {uid}.log")
         self.clean_command = "adb logcat -c"
         self.ready_to_finish = False
+        self.pid_lookup = ""
+        self.pid = None
+        self.pid_lookup_enabled = False
 
-        self.root.update_idletasks()  # Update "requested size" from geometry manager
+        self.root.update_idletasks()
         w = 800
         h = 900
         x = (self.root.winfo_screenwidth() - w) / 2
@@ -158,7 +187,6 @@ class AppGui():
                                 textvariable=self.sv_status_bar)
         self.status_bar.pack(side="bottom", fill="both")
 
-        # TOP
         self.label_filter = Label(self.panelFrame, text="Filter", bg="grey")
         self.label_filter.grid(row=0)
 
@@ -168,7 +196,6 @@ class AppGui():
                                 textvariable=self.sv_filter, width=45)
         self.textFilter.grid(row=0, column=1, padx=5, pady=10)
 
-        #
         self.scrollbar = Scrollbar(self.textFrame)
         self.scrollbar['command'] = self.textbox.yview
         self.scrollbar.pack(side='right', fill='y')
@@ -177,4 +204,6 @@ class AppGui():
         self.root.bind("<Escape>", self.on_esc_pressed)
         self.sv_filter.trace("w",
                              lambda name, index, mode, sv=self.sv_filter: self.command_text_changed(self.sv_filter))
+
         app.set_new_lines_callback(self.on_new_lines)
+        app.set_lines_changed_callback(self.on_lines_changed)

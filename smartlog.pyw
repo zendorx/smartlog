@@ -29,16 +29,17 @@ parser = argparse.ArgumentParser(prog=app_name,  # todo: move to description
 parser.add_argument("-cd", default="",
                     help="specifies directory where log files will be saved")
 
-parser.add_argument("--command_execute", default="adb logcat", action='store_const', const=True, help="executes clean command on app close.")
+parser.add_argument("--command_execute", default="adb logcat", action='store_const', const=True,
+                    help="executes clean command on app close.")
 
-parser.add_argument("--exit_clean", default=False, action='store_const', const=True, help="executes clean command on app close.")
-parser.add_argument("--start_clean", default=False, action='store_const', const=True, help="executes clean command on startup.")
-parser.add_argument("--command_clean", default="adb logcat -c", action='store_const', const=True, help="specifies clean command.")
+parser.add_argument("--exit_clean", default=False, action='store_const', const=True,
+                    help="executes clean command on app close.")
+parser.add_argument("--start_clean", default=False, action='store_const', const=True,
+                    help="executes clean command on startup.")
+parser.add_argument("--command_clean", default="adb logcat -c", help="specifies clean command.")
 
-parser.add_argument("--pid_lookup", default=False, action='store_const', const=True, help="specifies string for looking process id.")
-parser.add_argument("--pid_mask", default=".*\((.*?)\).*", action='store_const', const=True, help="specifies regex to searching pid in a text line.")
-
-
+parser.add_argument("--pid_lookup", default="", help="specifies string for looking process id.")
+parser.add_argument("--pid_mask", default="\((.*?)\)", help="specifies regex to searching pid in a text line.")
 
 # parser.add_argument("-ec", default=exit_commands,
 #                     help="commands that will executed on exit splited by ';' e.g:  'w;q' will write file and open explorer. To see more commands type :h")
@@ -74,10 +75,11 @@ parser.add_argument("--pid_mask", default=".*\((.*?)\).*", action='store_const',
 
 _args = parser.parse_args()
 
-#IF DEBUG
-_args.command_execute = "netstat -a"
+# IF DEBUG
+# _args.command_execute = "netstat -a"
 
 file_name = default_file_name
+
 
 def fix_current_dir(value):
     cd = value
@@ -103,10 +105,13 @@ gui.set_clean_command(_args.command_clean)
 if _args.start_clean:
     app.clear()
 
-
 gui.set_current_file_name(file_name)
 gui.set_current_folder(current_dir)
 gui.update_title("Smartlog - '" + _args.command_execute + "'")
+
+if _args.pid_lookup:
+    gui.set_pid_mask(_args.pid_mask)
+    gui.set_pid_lookup(_args.pid_lookup)
 
 app.set_command_exec(_args.command_execute)
 app.start_reading()
