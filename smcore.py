@@ -245,7 +245,6 @@ class SmartlogApp():
 
     def set_pid_filter_enabled(self, value):
         self.pid_filter_enabled = value
-        self.pid = None
         if value:
             self.update_pid(self.buffer.get_lines())
 
@@ -293,7 +292,8 @@ class SmartlogApp():
         self.new_line_callback = callback
 
     def do_filter(self, lines):
-        return [x for x in lines if x.can_show(self.filter, self.pid)]
+        pid = self.pid if self.pid_filter_enabled else None
+        return [x for x in lines if x.can_show(self.filter, pid)]
 
     def get_filtered_buffer(self):
         if self.filter or self.pid:

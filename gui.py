@@ -125,7 +125,7 @@ class AppGui():
         self.clean_command = command
 
     def do_clean(self):
-        self.app.clear()
+        self.app.clear(self.clean_command)
         self.redraw_lines()
 
     def set_pid_lookup(self, string):
@@ -141,9 +141,24 @@ class AppGui():
             return
 
         self.pid_lookup_enabled = value
+        self.app.set_pid_filter_enabled(value)
+
+        if self.pid_lookup_enabled:
+            self.button_pid.config(bg="green")
+        else:
+            self.button_pid.config(bg="grey")
+
 
     def set_pid_mask(self, string):
         self.app.set_pid_mask(re.compile(string))
+
+    def on_button_pid_pressed(self, event):
+        self.set_pid_lookup_enabled(not self.pid_lookup_enabled)
+        self.redraw_lines()
+
+    def on_button_clear_pressed(self, event):
+        self.do_clean()
+        self.redraw_lines()
 
     def __init__(self, app):
         self._filtered_count = 0
@@ -195,6 +210,14 @@ class AppGui():
         self.textFilter = Entry(self.panelFrame, bg="gray20", fg="green", insertbackground="white",
                                 textvariable=self.sv_filter, width=45)
         self.textFilter.grid(row=0, column=1, padx=5, pady=10)
+
+        self.button_clear = Button(self.panelFrame, text="Clear Log")
+        self.button_clear.bind("<Button-1>", self.on_button_clear_pressed)
+        self.button_clear.grid(row=0,column=2, padx=20)
+
+        self.button_pid = Button(self.panelFrame, text="PID")
+        self.button_pid.bind("<Button-1>", self.on_button_pid_pressed)
+        self.button_pid.grid(row=0, column=3, padx=20)
 
         self.scrollbar = Scrollbar(self.textFrame)
         self.scrollbar['command'] = self.textbox.yview
