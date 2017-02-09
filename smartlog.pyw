@@ -38,7 +38,7 @@ parser.add_argument("--start_clean", default=False, action='store_const', const=
                     help="executes clean command on startup.")
 parser.add_argument("--command_clean", default="adb logcat -c", help="specifies clean command.")
 
-parser.add_argument("--pid_lookup", default="oxygine init", help="specifies string for looking process id.")
+parser.add_argument("--pid_lookup", default="", help="specifies string for looking process id.")
 parser.add_argument("--pid_mask", default="\((.*?)\)", help="specifies regex to searching pid in a text line.")
 
 parser.add_argument("--file", default="", help="specifies log file to read.")
