@@ -5,7 +5,7 @@ import argparse
 from gui import *
 
 # INFO-------------------------
-version = "0.4"
+version = "0.5"
 app_name = "SmartLog"
 source_info = "https://github.com/zendorx/smart-logcat"
 contacts_info = "zendorx@gmail.com"
@@ -41,6 +41,7 @@ parser.add_argument("--command_clean", default="adb logcat -c", help="specifies 
 parser.add_argument("--pid_lookup", default="", help="specifies string for looking process id.")
 parser.add_argument("--pid_mask", default="\((.*?)\)", help="specifies regex to searching pid in a text line.")
 
+parser.add_argument("--file", default="", help="specifies log file to read.")
 # parser.add_argument("-ec", default=exit_commands,
 #                     help="commands that will executed on exit splited by ';' e.g:  'w;q' will write file and open explorer. To see more commands type :h")
 #
@@ -114,13 +115,18 @@ if _args.pid_lookup:
     gui.set_pid_lookup(_args.pid_lookup)
 
 app.set_command_exec(_args.command_execute)
-app.start_reading()
+
+if _args.file:
+    app.read_from_file(_args.file)
+else:
+    app.start_reading()
 
 while not gui.is_finished():
     app.update()
     gui.update()
 
-app.stop_reading()
+if not _args.file:
+    app.stop_reading()
 
 if _args.exit_clean:
     app.clear(_args.command_clean)

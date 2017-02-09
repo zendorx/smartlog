@@ -118,6 +118,18 @@ class CompiledLine():
 
         return True
 
+class FileReader():
+    def __init__(self, fname):
+        self.fname = fname
+        self.lines = []
+        with open(fname.decode("utf8"), "r") as f:
+           for l in f.readlines():
+               self.lines.append(l.strip())
+
+    def update(self):
+        lines = list(self.lines)
+        self.lines[:] = []
+        return lines
 
 class Reader():
     def __init__(self, command):
@@ -250,6 +262,9 @@ class SmartlogApp():
 
     def stop_reading(self):
         self.reader.stop()
+
+    def read_from_file(self, fname):
+        self.reader = FileReader(fname)
 
     def start_reading(self):
         self.reader = Reader(self.command)
