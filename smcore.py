@@ -151,7 +151,6 @@ class Reader():
 def get_pid(line, regex_pid):
     result = regex_pid.findall(line)
     if len(result):
-        print result[0]
         return result[0].lower().strip()
     return None
 
