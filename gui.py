@@ -167,7 +167,7 @@ class AppGui():
         self.finish = False
         self.set_current_folder("")
         self.last_saved_file = ""
-        self.root.iconbitmap("icon.ico")
+        #self.root.iconbitmap("icon.ico")
         self.set_current_folder("{t} {uid}.log")
         self.clean_command = "adb logcat -c"
         self.ready_to_finish = False
