@@ -56,7 +56,7 @@ class AppGui():
         return self.finish
 
     def add_line(self, cl):
-        self.textbox.insert(END, "[%d]\t%s\n" % (cl.get_index(), cl.get(),), cl.get_tag())
+        self.textbox.insert(END, "[%d]\t%s\n" % (cl.get_index(), cl.get_original(),), cl.get_tag())
 
     def redraw_lines(self):
         self._filtered_count = 0
