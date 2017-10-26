@@ -42,6 +42,9 @@ parser.add_argument("--pid_lookup", default="", help="specifies string for looki
 parser.add_argument("--pid_mask", default="\((.*?)\)", help="specifies regex to searching pid in a text line.")
 
 parser.add_argument("--file", default="", help="specifies log file to read.")
+
+
+
 # parser.add_argument("-ec", default=exit_commands,
 #                     help="commands that will executed on exit splited by ';' e.g:  'w;q' will write file and open explorer. To see more commands type :h")
 #

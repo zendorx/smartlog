@@ -190,6 +190,7 @@ class AppGui():
 
         self.textbox = Text(self.textFrame, wrap='word', bg="black", fg="white")
         self.textbox.pack(side='left', fill='both', expand=1)
+        self.textbox.bind("<1>", lambda event: self.textbox.focus_set())
 
         self.textbox.tag_config(default.tag_error(), foreground="red")
         self.textbox.tag_config(default.tag_warning(), foreground="yellow")
